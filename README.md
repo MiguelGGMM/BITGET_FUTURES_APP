@@ -1,5 +1,4 @@
 # BITGET_FUTURES_APP
  
--Create LONG/SHORT futures orders
--Modify TP/SL
--Manage several accounts at same time
+You can use this to replicate your BTCUSDT long/shorts on several accounts
+You need an API key with lecture permissions on main account and trade permission on the 'son' accounts

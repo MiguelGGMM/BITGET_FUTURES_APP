@@ -1,0 +1,20 @@
+{
+    "accounts_data":
+    [
+        {
+            "name":"main",
+            "apiKey":"",
+            "secretKey":"", 
+            "passPhrase":"",            
+            "accountsReply": [
+                {
+                    "name":"reply1",
+                    "multiplier":30,
+                    "apiKey":"",
+                    "secretKey":"", 
+                    "passPhrase":""            
+                }
+            ]
+        }
+    ]
+}
