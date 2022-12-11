@@ -1,3 +1,4 @@
 node_modules/
 config/accounts.json
 managerBorrar.js
+cache/reply1_cache.json

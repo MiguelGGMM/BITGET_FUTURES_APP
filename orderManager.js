@@ -2,16 +2,20 @@ const bitgetApi = require('bitget-api-node-sdk');
 const fs = require('fs');
 const cachePrefix = "./cache/";
 const cacheSufix = "_cache.json";
+var AsyncLock = require('async-lock');
 
 class OrderManager {    
-    constructor(_accountData) {
+    constructor(_accountData, debug) {
         this.name = _accountData.name;        
         this.multiplier = _accountData.multiplier;
+        this.fixedAmountBTC = _accountData.fixedAmountBTC;
         this.mixOrderAPI = new bitgetApi.MixOrderApi(_accountData.apiKey,_accountData.secretKey,_accountData.passPhrase);
         this.mixAccountAPI = new bitgetApi.MixAccountApi(_accountData.apiKey,_accountData.secretKey,_accountData.passPhrase);
         this.fatherSonIds = {};
         this.ordersOpenedIds = [];
         this.cacheFile = `${cachePrefix}${this.name}${cacheSufix}`;
+        this.debug = debug;
+        this.orderLock = new AsyncLock();
         this.isOwnOrder = (orderId) => { 
             return this.ordersOpenedIds.includes(orderId); 
         }
@@ -52,7 +56,7 @@ class OrderManager {
         var answer = await this.mixOrderAPI.placeOrder({
             "symbol": "BTCUSDT_UMCBL", 
             "marginCoin": "USDT",
-            "size": (0.001).toString(),//(parseFloat(size)*this.multiplier).toFixed(3),
+            "size": this.debug ? (0.001).toString() : (this.fixedAmountBTC != "" ? this.fixedAmountBTC : (parseFloat(size)*this.multiplier).toFixed(3)),
             "side": `open_${side}`,
             "orderType":"market"
         });
@@ -63,7 +67,8 @@ class OrderManager {
         return answer.data.orderId;
     }
     CloseOrder = async (orderId) => {
-        await this.mixOrderAPI.cancelOrder({ orderId, symbol : "BTCUSDT_UMCBL", marginCoin : "USDT" });
+        var answer = await this.mixOrderAPI.cancelOrder({ orderId, symbol : "BTCUSDT_UMCBL", marginCoin : "USDT" });        
+        console.log(`test close order: ${answer.data.orderId}`);
     }
     SetSon = async (fatherId, sonId) => {
         this.fatherSonIds[fatherId] = sonId;
@@ -73,11 +78,18 @@ class OrderManager {
         return this.fatherSonIds[fatherId];
     }
     OpenOrderFather = async (fatherId, side, leverage, size) => {
-        if(!this.isFatherRegistered(fatherId) && !this.isOwnOrder(fatherId)){
-            await this.SetSon(fatherId, (await this.OpenOrder(side, leverage, size)));            
-            this.ordersOpenedIds.push(this.GetSon(fatherId));            
-            return this.GetSon(fatherId);
-        }
+        var _this = {_: this};
+        await this.orderLock.acquire(fatherId, async function() {
+            if(!_this._.isFatherRegistered(fatherId) && !_this._.isOwnOrder(fatherId)){
+                await _this._.SetSon(fatherId, (await _this._.OpenOrder(side, leverage, size)));            
+                _this._.ordersOpenedIds.push(_this._.GetSon(fatherId));            
+            }
+        }, {}).catch(function(err) {
+            if(err != undefined){
+                throw err;
+            }
+        });
+        return _this._.GetSon(fatherId);
     }
     CloseOrderFather = async (fatherId) => {
         if(this.isFatherRegistered(fatherId) && !this.isOwnOrder(fatherId)){

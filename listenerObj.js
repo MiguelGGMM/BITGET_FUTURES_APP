@@ -97,7 +97,7 @@ class ListennerObj extends bitgetApi.Listenner{
                             this.printMsg(`[CLOSED ORDER ${_d.ordId}] ${configPos}: ${_d.tgtCcy} (${margin})`); 
                             await this.orderManagers.forEach(async (orderManager) => {  
                                 try{
-                                    await orderManager.CloseOrder(_d.orgId); 
+                                    await orderManager.CloseOrderFather(_d.orgId); 
                                     this.printMsg(`[CLOSED ORDER ${_d.ordId}] ${configPos}: ${_d.tgtCcy} (${margin}), closed for ${orderManager.name}`);  
                                 }catch(ex){
                                     this.printMsg(`Error closing order (${_d.ordId}) for ${orderManager.name}

@@ -3,12 +3,13 @@ const orderManager = require('./orderManager.js');
 const listenerObj = require('./listenerObj');
 
 class AccountListener {
-    constructor(_accountData) {
+    constructor(_accountData, debug) {
         this.name = _accountData.name;
         this.apiKey = _accountData.apiKey;
         this.secretKey = _accountData.secretKey;
         this.passPhrase = _accountData.passPhrase;
         this.accountsReply = _accountData.accountsReply;
+        this.debug = debug;
         this.orderManagers = [];
         this.listener = undefined;
         this.wsClient = undefined;
@@ -19,7 +20,7 @@ class AccountListener {
     }
     initializeOrderManagers = async () => {
         await this.accountsReply.forEach(async (_accountDataReply) => { 
-            var _orderManager = new orderManager.OrderManager(_accountDataReply)
+            var _orderManager = new orderManager.OrderManager(_accountDataReply, this.debug)
             await _orderManager.Initialize();
             this.orderManagers.push(_orderManager); 
         }); 
