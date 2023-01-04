@@ -23,6 +23,11 @@ class OrderManager {
             return this.fatherSonIds[orderId] != undefined; 
         }
     }
+    printDebug = (msg) => {
+        if(this.debug){
+            console.log(`[DEBUG] ${msg}`);
+        }
+    }
     LoadSnapshot = async () => {
         if(fs.existsSync(this.cacheFile)){
             var cacheObj = fs.readFileSync(this.cacheFile);
@@ -57,18 +62,20 @@ class OrderManager {
             "symbol": "BTCUSDT_UMCBL", 
             "marginCoin": "USDT",
             "size": this.debug ? (0.001).toString() : (this.fixedAmountBTC != "" ? this.fixedAmountBTC : (parseFloat(size)*this.multiplier).toFixed(3)),
-            "side": `open_${side}`,
+            "side": side,
             "orderType":"market"
         });
         if(!(answer.data && answer.data.orderId)){
-            console.log(`ERROR OPENING ORDER FOR ${this.name}. Code ${answer.code}. Msg: ${answer.msg}`);
+            console.log(`ERROR OPENING ORDER (${side}) FOR ${this.name}. Code ${answer.code}. Msg: ${answer.msg}`);
         }
 
         return answer.data.orderId;
     }
     CloseOrder = async (orderId) => {
         var answer = await this.mixOrderAPI.cancelOrder({ orderId, symbol : "BTCUSDT_UMCBL", marginCoin : "USDT" });        
-        console.log(`test close order: ${answer.data.orderId}`);
+        if(debug){
+            _this.printDebug(`Close order: ${answer.data.orderId}`);
+        }
     }
     SetSon = async (fatherId, sonId) => {
         this.fatherSonIds[fatherId] = sonId;
@@ -78,24 +85,46 @@ class OrderManager {
         return this.fatherSonIds[fatherId];
     }
     OpenOrderFather = async (fatherId, side, leverage, size) => {
-        var _this = {_: this};
+        let _this = this;
         await this.orderLock.acquire(fatherId, async function() {
-            if(!_this._.isFatherRegistered(fatherId) && !_this._.isOwnOrder(fatherId)){
-                await _this._.SetSon(fatherId, (await _this._.OpenOrder(side, leverage, size)));            
-                _this._.ordersOpenedIds.push(_this._.GetSon(fatherId));            
+            if(!_this.isFatherRegistered(fatherId) && !_this.isOwnOrder(fatherId)){
+                await _this.SetSon(fatherId, (await _this.OpenOrder(`open_${side}`, leverage, size)));            
+                _this.ordersOpenedIds.push(_this.GetSon(fatherId));            
             }
         }, {}).catch(function(err) {
             if(err != undefined){
                 throw err;
             }
         });
-        return _this._.GetSon(fatherId);
+
+        return this.GetSon(fatherId);
     }
-    CloseOrderFather = async (fatherId) => {
-        if(this.isFatherRegistered(fatherId) && !this.isOwnOrder(fatherId)){
-            await this.CloseOrder(this.GetSon(fatherId));
-            await this.SetSon(fatherId, undefined);            
-        }
+    CloseOrderFather = async (fatherId, side, leverage, size) => {
+        let _this = this;
+        let _son = -1;
+        await this.orderLock.acquire(fatherId, async function() {
+            if(_this.isFatherRegistered(fatherId) && !_this.isOwnOrder(fatherId)){
+                _this.printDebug(`CloseOrderFather is registered: fatherId -> ${fatherId}, sonId -> ${_son}`);
+                _son = _this.GetSon(fatherId);
+                _this.printDebug(`CloseOrderFather son id: fatherId -> ${fatherId}, sonId -> ${_son}`);
+                await _this.CloseOrder(_son);
+                await _this.SetSon(fatherId, undefined);            
+            }
+            else{
+                _this.printDebug(`CloseOrderFather not registered: fatherId -> ${fatherId}, sonId -> ${_son}`);
+                _this.printDebug(`Trying to close from amount...`);
+                _son = await this.OpenOrder(`close_${side}`, leverage, size);
+                if(_son != -1){
+                    _this.printDebug(`Successful, orderId ${_son}`);
+                }
+            }
+        }, {}).catch(function(err) {
+            if(err != undefined){
+                throw err;
+            }
+        });
+
+        return _son;
     }
 }
 exports.OrderManager = OrderManager;

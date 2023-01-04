@@ -1,4 +1,5 @@
 const bitgetApi = require('bitget-api-node-sdk');
+var AsyncLock = require('async-lock');
 
 class ListennerObj extends bitgetApi.Listenner{
     constructor(_name, orderManagers){
@@ -8,6 +9,7 @@ class ListennerObj extends bitgetApi.Listenner{
         this.lastUpdatePosInfo = 0;
         this.ordersIds = {};
         this.orderManagers = orderManagers;
+        this.orderLock = new AsyncLock();
         this.getDateMinutes = () => { return parseInt(Date.now()/60000); }
         this.printMsg = (msg) => { console.info(`${new Date().toLocaleTimeString()} [Account: ${this.name}]\t>>> ${msg}`); }        
         this.eventType = (arg, data) => {
@@ -38,12 +40,21 @@ class ListennerObj extends bitgetApi.Listenner{
         }
     }
 
+    msgOrderFeedback = (orderObj, _new) => {
+        let margin = (parseFloat(orderObj.notionalUsd)/parseInt(orderObj.lever)).toFixed(3) 
+        let configPos = `${orderObj.posSide} x${orderObj.lever} (${orderObj.tdMode}) ${orderObj.instId}`;
+        if(_new){
+            return `[NEW ORDER ${_d.ordId}] ${configPos}: ${_d.tgtCcy} (${margin})`;    
+        }else{
+            return `[CLOSED ORDER ${_d.ordId}] ${configPos}: ${_d.tgtCcy} (${margin})`;    
+        }
+    }
     reveice = async (message) => {
         try{
             if(message == "pong"){
                 return;
             }
-            var _obj = JSON.parse(message);
+            let _obj = JSON.parse(message);
 
             // Basic check
             if(_obj.action && _obj.action == "snapshot" && _obj.arg && _obj.arg.instType && _obj.data && _obj.data.length >= 1)
@@ -62,29 +73,35 @@ class ListennerObj extends bitgetApi.Listenner{
                         case(2):
                             if(this.lastUpdatePosInfo < this.getDateMinutes()){
                                 this.lastUpdatePosInfo = this.getDateMinutes();
-                                var configPos = `${_d.holdSide} x${_d.leverage} (${_d.marginMode}) ${_d.instId}`;
+                                let configPos = `${_d.holdSide} x${_d.leverage} (${_d.marginMode}) ${_d.instId}`;
                                 this.printMsg(`${configPos}: ${_d.margin} (${_d.marginCoin} margin), ${_d.upl}$ (PNL)`);
                             }
                             break;
                         // Open orders, open and link orders
                         case(3):          
-                            var secondsSinceOrder = parseInt((Date.now() - _d.uTime)/1000);
+                            let secondsSinceOrder = parseInt((Date.now() - _d.uTime)/1000);
                             if(secondsSinceOrder < 10)  
                             {
-                                var margin = (parseFloat(_d.notionalUsd)/parseInt(_d.lever)).toFixed(3) 
-                                var configPos = `${_d.posSide} x${_d.lever} (${_d.tdMode}) ${_d.instId}`;
-                                this.printMsg(`[NEW ORDER ${_d.ordId}] ${configPos}: ${_d.tgtCcy} (${margin})`);                            
-                                await this.orderManagers.forEach(async (orderManager) => { 
-                                    var orderOpenedId = -1;
-                                    try{
-                                        orderOpenedId = await orderManager.OpenOrderFather(_d.ordId, _d.posSide, _d.lever, _d.sz);
-                                        this.printMsg(`[NEW ORDER ${_d.ordId}] ${configPos}: ${_d.tgtCcy} (${margin}), opened for ${orderManager.name} (${orderOpenedId})`);
-                                    }catch(ex){
-                                        this.printMsg(`Error opening order (${_d.ordId}) for ${orderManager.name}
-                                        ERROR:
-                                        ${ex.toString()}`);
+                                // LOCK
+                                await this.orderLock.acquire(_d.ordId, async function() {
+                                    let orderFeedback = msgOrderFeedback(_d, true);
+                                    this.printMsg(orderFeedback);                            
+                                    this.orderManagers.forEach(async (orderManager) => { 
+                                        let orderOpenedId = -1;
+                                        try{
+                                            orderOpenedId = await orderManager.OpenOrderFather(_d.ordId, _d.posSide, _d.lever, _d.sz);
+                                            this.printMsg(`${orderFeedback}, opened for ${orderManager.name} (${orderOpenedId})`);
+                                        }catch(ex){
+                                            this.printMsg(`Error opening order (${_d.ordId}) for ${orderManager.name}
+                                            ERROR:
+                                            ${ex.toString()}`);
+                                        }
+                                    });    
+                                }, {}).catch(function(err) {
+                                    if(err != undefined){
+                                        throw err;
                                     }
-                                });                        
+                                });                    
                             }
                             else{
                                 this.printMsg(`late order (> 10s: ${secondsSinceOrder}), ${_d.ordId} (order id), message: ${message}`);
@@ -92,19 +109,24 @@ class ListennerObj extends bitgetApi.Listenner{
                             break;
                         // Close orders, close linked orders
                         case(4):  
-                            var margin = (parseFloat(_d.notionalUsd)/parseInt(_d.lever)).toFixed(3); 
-                            var configPos = `${_d.posSide} x${_d.lever} (${_d.tdMode}) ${_d.instId}`;  
-                            this.printMsg(`[CLOSED ORDER ${_d.ordId}] ${configPos}: ${_d.tgtCcy} (${margin})`); 
-                            await this.orderManagers.forEach(async (orderManager) => {  
-                                try{
-                                    await orderManager.CloseOrderFather(_d.orgId); 
-                                    this.printMsg(`[CLOSED ORDER ${_d.ordId}] ${configPos}: ${_d.tgtCcy} (${margin}), closed for ${orderManager.name}`);  
-                                }catch(ex){
-                                    this.printMsg(`Error closing order (${_d.ordId}) for ${orderManager.name}
-                                    ERROR:
-                                    ${ex.toString()}`);
+                            await this.orderLock.acquire(_d.ordId, async function() {
+                                let orderFeedback = msgOrderFeedback(_d, false);
+                                this.printMsg(orderFeedback);                  
+                                this.orderManagers.forEach(async (orderManager) => {  
+                                    try{
+                                        let _sonOrder = await orderManager.CloseOrderFather(_d.orgId, _d.posSide, _d.lever, _d.sz); 
+                                        this.printMsg(`${orderFeedback}, closed for ${orderManager.name} (${_sonOrder})`);  
+                                    }catch(ex){
+                                        this.printMsg(`Error closing order (${_d.ordId}) for ${orderManager.name}
+                                        ERROR:
+                                        ${ex.toString()}`);
+                                    }
+                                });     
+                            }, {}).catch(function(err) {
+                                if(err != undefined){
+                                    throw err;
                                 }
-                            });                                                       
+                            });                                                     
                             break;
                         default:
                             this.printMsg(`unknown event, message received: ${message}`);

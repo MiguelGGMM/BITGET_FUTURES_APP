@@ -20,7 +20,7 @@ class AccountListener {
     }
     initializeOrderManagers = async () => {
         await this.accountsReply.forEach(async (_accountDataReply) => { 
-            var _orderManager = new orderManager.OrderManager(_accountDataReply, this.debug)
+            let _orderManager = new orderManager.OrderManager(_accountDataReply, this.debug)
             await _orderManager.Initialize();
             this.orderManagers.push(_orderManager); 
         }); 
