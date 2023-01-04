@@ -11,7 +11,7 @@ class ListennerObj extends bitgetApi.Listenner{
         this.orderManagers = orderManagers;
         this.orderLock = new AsyncLock();
         this.getDateMinutes = () => { return parseInt(Date.now()/60000); }
-        this.printMsg = (msg) => { console.info(`${new Date().toLocaleTimeString()} [Account: ${this.name}]\t>>> ${msg}`); }        
+        this.printMsg = (msg) => { console.info(`${new Date().toLocaleTimeString('en-GB')} [Account: ${this.name}]\t>>> ${msg}`); }        
         this.eventType = (arg, data) => {
             // 0 unknown
             // 1 account
@@ -84,7 +84,7 @@ class ListennerObj extends bitgetApi.Listenner{
                             {
                                 // LOCK
                                 await this.orderLock.acquire(_d.ordId, async function() {
-                                    let orderFeedback = msgOrderFeedback(_d, true);
+                                    let orderFeedback = this.msgOrderFeedback(_d, true);
                                     this.printMsg(orderFeedback);                            
                                     this.orderManagers.forEach(async (orderManager) => { 
                                         let orderOpenedId = -1;
@@ -110,7 +110,7 @@ class ListennerObj extends bitgetApi.Listenner{
                         // Close orders, close linked orders
                         case(4):  
                             await this.orderLock.acquire(_d.ordId, async function() {
-                                let orderFeedback = msgOrderFeedback(_d, false);
+                                let orderFeedback = this.msgOrderFeedback(_d, false);
                                 this.printMsg(orderFeedback);                  
                                 this.orderManagers.forEach(async (orderManager) => {  
                                     try{
