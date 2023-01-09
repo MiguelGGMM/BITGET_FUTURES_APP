@@ -44,9 +44,9 @@ class ListennerObj extends bitgetApi.Listenner{
         let margin = (parseFloat(orderObj.notionalUsd)/parseInt(orderObj.lever)).toFixed(3) 
         let configPos = `${orderObj.posSide} x${orderObj.lever} (${orderObj.tdMode}) ${orderObj.instId}`;
         if(_new){
-            return `[NEW ORDER ${_d.ordId}] ${configPos}: ${_d.tgtCcy} (${margin})`;    
+            return `[NEW ORDER ${orderObj.ordId}] ${configPos}: ${orderObj.tgtCcy} (${margin})`;    
         }else{
-            return `[CLOSED ORDER ${_d.ordId}] ${configPos}: ${_d.tgtCcy} (${margin})`;    
+            return `[CLOSED ORDER ${orderObj.ordId}] ${configPos}: ${orderObj.tgtCcy} (${margin})`;    
         }
     }
     reveice = async (message) => {
@@ -83,16 +83,17 @@ class ListennerObj extends bitgetApi.Listenner{
                             if(secondsSinceOrder < 10)  
                             {
                                 // LOCK
+                                let _this = this;
                                 await this.orderLock.acquire(_d.ordId, async function() {
-                                    let orderFeedback = this.msgOrderFeedback(_d, true);
-                                    this.printMsg(orderFeedback);                            
-                                    this.orderManagers.forEach(async (orderManager) => { 
+                                    let orderFeedback = _this.msgOrderFeedback(_d, true);
+                                    _this.printMsg(orderFeedback);                            
+                                    _this.orderManagers.forEach(async (orderManager) => { 
                                         let orderOpenedId = -1;
                                         try{
                                             orderOpenedId = await orderManager.OpenOrderFather(_d.ordId, _d.posSide, _d.lever, _d.sz);
-                                            this.printMsg(`${orderFeedback}, opened for ${orderManager.name} (${orderOpenedId})`);
+                                            _this.printMsg(`${orderFeedback}, opened for ${orderManager.name} (${orderOpenedId})`);
                                         }catch(ex){
-                                            this.printMsg(`Error opening order (${_d.ordId}) for ${orderManager.name}
+                                            _this.printMsg(`Error opening order (${_d.ordId}) for ${orderManager.name}
                                             ERROR:
                                             ${ex.toString()}`);
                                         }
@@ -109,15 +110,16 @@ class ListennerObj extends bitgetApi.Listenner{
                             break;
                         // Close orders, close linked orders
                         case(4):  
+                            let _this = this;
                             await this.orderLock.acquire(_d.ordId, async function() {
-                                let orderFeedback = this.msgOrderFeedback(_d, false);
-                                this.printMsg(orderFeedback);                  
-                                this.orderManagers.forEach(async (orderManager) => {  
+                                let orderFeedback = _this.msgOrderFeedback(_d, false);
+                                _this.printMsg(orderFeedback);                  
+                                _this.orderManagers.forEach(async (orderManager) => {  
                                     try{
                                         let _sonOrder = await orderManager.CloseOrderFather(_d.orgId, _d.posSide, _d.lever, _d.sz); 
-                                        this.printMsg(`${orderFeedback}, closed for ${orderManager.name} (${_sonOrder})`);  
+                                        _this.printMsg(`${orderFeedback}, closed for ${orderManager.name} (${_sonOrder})`);  
                                     }catch(ex){
-                                        this.printMsg(`Error closing order (${_d.ordId}) for ${orderManager.name}
+                                        _this.printMsg(`Error closing order (${_d.ordId}) for ${orderManager.name}
                                         ERROR:
                                         ${ex.toString()}`);
                                     }
